@@ -980,7 +980,7 @@ DataExplorer.ready(function () {
 
         function linkFormatter(path, siteColumnName) {
             var url = base + path, 
-                template = '<a href=":url">:text</a>',
+                template = '<a href=":url" target="_blank">:text</a>',
                 siteColumnName = siteColumnName,
                 path = path;
 
