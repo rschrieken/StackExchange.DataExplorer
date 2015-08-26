@@ -8,6 +8,7 @@ using System.Data.SqlClient;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
+using StackExchange.Profiling;
 
 
 namespace StackExchange.DataExplorer
@@ -90,6 +91,20 @@ namespace StackExchange.DataExplorer
         }
 
         /// <summary>
+        /// Is this request is over HTTPS (or behind an HTTPS load balancer)?
+        /// </summary>
+        public static bool IsSecureConnection
+        {
+            get
+            {
+                return Request.IsSecureConnection ||
+                    // This can be "http", "https", or the more fun "https, http, https, https" even.
+                       (Request.Headers["X-Forwarded-Proto"] != null &&
+                        Request.Headers["X-Forwarded-Proto"].StartsWith("https"));
+            }
+        }
+
+        /// <summary>
         /// Gets the controller for the current request; should be set during init of current request's controller.
         /// </summary>
         public static StackOverflowController Controller
@@ -114,21 +129,21 @@ namespace StackExchange.DataExplorer
         }
 
 
-        class ErrorLoggingProfiler : StackExchange.Profiling.Data.IDbProfiler
+        class ErrorLoggingProfiler : Profiling.Data.IDbProfiler
         {
-            StackExchange.Profiling.Data.IDbProfiler wrapped;
+            Profiling.Data.IDbProfiler wrapped;
 
-            public ErrorLoggingProfiler(StackExchange.Profiling.Data.IDbProfiler wrapped)
+            public ErrorLoggingProfiler(Profiling.Data.IDbProfiler wrapped)
             {
                 this.wrapped = wrapped;
             }
 
-            public void ExecuteFinish(DbCommand profiledDbCommand, StackExchange.Profiling.Data.ExecuteType executeType, DbDataReader reader)
+            public void ExecuteFinish(IDbCommand profiledDbCommand, Profiling.Data.SqlExecuteType executeType, DbDataReader reader)
             {
                 this.wrapped.ExecuteFinish(profiledDbCommand, executeType, reader);
             }
 
-            public void ExecuteStart(DbCommand profiledDbCommand, StackExchange.Profiling.Data.ExecuteType executeType)
+            public void ExecuteStart(IDbCommand profiledDbCommand, Profiling.Data.SqlExecuteType executeType)
             {
                 this.wrapped.ExecuteStart(profiledDbCommand, executeType);
             }
@@ -138,15 +153,14 @@ namespace StackExchange.DataExplorer
                 get { return this.wrapped.IsActive; }
             }
 
-            public void OnError(DbCommand profiledDbCommand, StackExchange.Profiling.Data.ExecuteType executeType, Exception exception)
+            public void OnError(IDbCommand profiledDbCommand, Profiling.Data.SqlExecuteType executeType, Exception exception)
             {
-                var formatter = new StackExchange.Profiling.SqlFormatters.SqlServerFormatter();
-                var timing = new StackExchange.Profiling.SqlTiming(profiledDbCommand, executeType, null);
-                exception.Data["SQL"] = formatter.FormatSql(timing);
+                var formatter = new Profiling.SqlFormatters.SqlServerFormatter();
+                exception.Data["SQL"] = formatter.FormatSql(profiledDbCommand.CommandText, SqlTiming.GetCommandParameters(profiledDbCommand));
                 this.wrapped.OnError(profiledDbCommand, executeType, exception);
             }
 
-            public void ReaderFinish(DbDataReader reader)
+            public void ReaderFinish(IDataReader reader)
             {
                 this.wrapped.ReaderFinish(reader);
             }
@@ -173,8 +187,8 @@ namespace StackExchange.DataExplorer
                 if (result == null)
                 {
                     DbConnection cnn = new SqlConnection(System.Configuration.ConfigurationManager.ConnectionStrings["AppConnection"].ConnectionString);
-                    if (Current.Profiler != null)
-                        cnn = new StackExchange.Profiling.Data.ProfiledDbConnection(cnn, new ErrorLoggingProfiler(Current.Profiler));
+                    if (Profiler != null)
+                        cnn = new Profiling.Data.ProfiledDbConnection(cnn, new ErrorLoggingProfiler(Profiler));
                     cnn.Open();
                     result = DataExplorerDatabase.Create(cnn, 30);
                     if (Context != null)
@@ -335,9 +349,12 @@ namespace StackExchange.DataExplorer
         /// <summary>
         /// manually write a message (wrapped in a simple Exception) to our standard exception log
         /// </summary>
-        public static void LogException(string message)
+        public static void LogException(string message, Exception inner = null)
         {
-            GlobalApplication.LogException(message);
+            if (inner != null)
+                GlobalApplication.LogException(new Exception(message, inner));
+            else 
+                GlobalApplication.LogException(message);
         }
 
         /// <summary>

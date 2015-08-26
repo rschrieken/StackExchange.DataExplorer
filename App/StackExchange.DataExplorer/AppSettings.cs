@@ -1,9 +1,8 @@
 ﻿using System;
+using System.Configuration;
 using System.Linq;
 using System.Reflection;
-using Dapper;
 using StackExchange.DataExplorer.Helpers;
-using StackExchange.DataExplorer.Models;
 using Newtonsoft.Json;
 
 namespace StackExchange.DataExplorer
@@ -20,6 +19,12 @@ namespace StackExchange.DataExplorer
 
         [Default(2)]
         public static int ConcurrentQueries { get; private set; }
+
+        [Default(50000)]
+        public static int MaxResultsPerResultSet { get; private set; }
+
+        [Default(100000)]
+        public static int MaxTotalResults { get; private set; }
 
         [Default(true)]
         public static bool FetchDataInReadUncommitted { get; private set; }
@@ -46,6 +51,9 @@ namespace StackExchange.DataExplorer
         [Default(true)]
         public static bool EnableCancelQuery { get; private set; }
 
+        [Default(false)]
+        public static bool EnableBypassCache { get; private set; }
+
         [Default("")]
         public static string RecaptchaPublicKey { get; private set; }
 
@@ -58,9 +66,47 @@ namespace StackExchange.DataExplorer
         [Default(null)]
         public static HelperTableCachePreferences HelperTableOptions { get; private set; }
 
+        [Default(false)]
+        public static bool EnableOdata { get; private set; }
+
+        [Default(AuthenitcationMethod.Default)]
+        public static AuthenitcationMethod AuthMethod { get; private set; }
+
+        [Default("")]
+        public static string ActiveDirectoryViewGroups { get; private set; }
+
+        [Default("")]
+        public static string ActiveDirectoryAdminGroups { get; private set; }
+
+        [Default("")]
+        public static string OAuthSessionSalt { get; private set; }
+
+        [Default("")]
+        public static string GoogleOAuthClientId { get; private set; }
+
+        [Default("")]
+        public static string GoogleOAuthSecret { get; private set; }
+
+        public static bool EnableGoogleLogin { get { return GoogleOAuthClientId.HasValue() && GoogleOAuthSecret.HasValue(); } }
+
+
+        public enum AuthenitcationMethod
+        {
+            Default, // OpenID & Oauth
+            ActiveDirectory
+        }
+
+        public static Action Refreshed;
+
         public static void Refresh()
         {
             var data = Current.DB.AppSettings.All().ToDictionary(v => v.Setting, v => v.Value);
+
+            // Also allow overriding keys from the web.config
+            foreach (var k in ConfigurationManager.AppSettings.AllKeys)
+            {
+                data[k] = ConfigurationManager.AppSettings[k];
+            }
 
             foreach (var property in typeof(AppSettings).GetProperties(BindingFlags.Static | BindingFlags.Public))
             {
@@ -70,13 +116,13 @@ namespace StackExchange.DataExplorer
                 {
                     if (property.PropertyType == typeof(bool))
                     {
-                        bool parsed = false;
+                        bool parsed;
                         Boolean.TryParse(overrideData, out parsed);
                         property.SetValue(null, parsed, null);
                     }
                     else if (property.PropertyType == typeof(int))
                     {
-                        int parsed = -1;
+                        int parsed;
                         if (int.TryParse(overrideData, out parsed))
                         {
                             property.SetValue(null, parsed, null);
@@ -85,6 +131,10 @@ namespace StackExchange.DataExplorer
                     else if (property.PropertyType == typeof(string))
                     {
                         property.SetValue(null, overrideData, null);
+                    }
+                    else if (property.PropertyType.IsEnum)
+                    {
+                        property.SetValue(null, Enum.Parse(property.PropertyType, overrideData), null);
                     }
                     else if (overrideData[0] == '{' && overrideData[overrideData.Length - 1] == '}')
                     {
@@ -101,10 +151,17 @@ namespace StackExchange.DataExplorer
                 }
                 else
                 {
-                    DefaultAttribute attrib = (DefaultAttribute)property.GetCustomAttributes(typeof(DefaultAttribute), false)[0];
-                    property.SetValue(null, attrib.DefaultValue, null);
+                    var attribs = property.GetCustomAttributes(typeof (DefaultAttribute), false);
+                    if (attribs.Length > 0)
+                    {
+                        var attrib = (DefaultAttribute) attribs[0];
+                        property.SetValue(null, attrib.DefaultValue, null);
+                    }
                 }
             }
+            // For anyone who wants to listen and update their downstream data...
+            var handler = Refreshed;
+            if (handler != null) handler();
         }
     }
 }

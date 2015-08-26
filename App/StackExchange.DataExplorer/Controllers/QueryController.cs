@@ -11,7 +11,7 @@ namespace StackExchange.DataExplorer.Controllers
 {
     public class QueryController : StackOverflowController
     {
-        [Route(@"query/job/{guid}")]
+        [StackRoute(@"query/job/{guid}")]
         public ActionResult PollJob(Guid guid)
         {
             var result = AsyncQueryRunner.PollJob(guid);
@@ -42,7 +42,7 @@ namespace StackExchange.DataExplorer.Controllers
         }
 
         [HttpPost]
-        [Route(@"query/job/{guid}/cancel")]
+        [StackRoute(@"query/job/{guid}/cancel")]
         public ActionResult CancelJob(Guid guid)
         {
             if (!AppSettings.EnableCancelQuery)
@@ -61,8 +61,8 @@ namespace StackExchange.DataExplorer.Controllers
         }
 
         [HttpPost]
-        [Route(@"query/save/{siteId:\d+}/{querySetId?:\d+}")]
-        public ActionResult Save(string sql, string title, string description, int siteId, int? querySetId, bool? textResults, bool? withExecutionPlan, TargetSites? targetSites)
+        [StackRoute(@"query/save/{siteId:\d+}/{querySetId?:\d+}")]
+        public ActionResult Save(string sql, string title, string description, int siteId, int? querySetId, bool? textResults, bool? withExecutionPlan, bool? bypassCache, TargetSites? targetSites)
         {
             if (CurrentUser.IsAnonymous && !CaptchaController.CaptchaPassed(GetRemoteIP()))
             {
@@ -95,6 +95,11 @@ namespace StackExchange.DataExplorer.Controllers
                     withExecutionPlan == true,
                     targetSites ?? TargetSites.Current
                 );
+
+                if (AppSettings.EnableBypassCache && bypassCache.HasValue && bypassCache.Value)
+                {
+                    QueryUtil.ClearCachedResults(parsedQuery, siteId);
+                }
 
                 QueryResults results = null;
                 Site site = GetSite(siteId);
@@ -285,8 +290,8 @@ select @newId, RevisionId from QuerySetRevisions where QuerySetId = @oldId", new
 
 
         [HttpPost]
-        [Route(@"query/run/{siteId:\d+}/{querySetId:\d+}/{revisionId:\d+}")]
-        public ActionResult Execute(int querySetId, int revisionId, int siteId, bool? textResults, bool? withExecutionPlan, TargetSites? targetSites)
+        [StackRoute(@"query/run/{siteId:\d+}/{querySetId:\d+}/{revisionId:\d+}")]
+        public ActionResult Execute(int querySetId, int revisionId, int siteId, bool? textResults, bool? withExecutionPlan, bool? bypassCache, TargetSites? targetSites)
         {
             if (CurrentUser.IsAnonymous && !CaptchaController.CaptchaPassed(GetRemoteIP()))
             {
@@ -326,6 +331,11 @@ select @newId, RevisionId from QuerySetRevisions where QuerySetId = @oldId", new
                     targetSites ?? TargetSites.Current
                 );
 
+                if (AppSettings.EnableBypassCache && bypassCache.HasValue && bypassCache.Value)
+                {
+                    QueryUtil.ClearCachedResults(parsedQuery, siteId);
+                }
+
                 QueryResults results = null;
                 Site site = GetSite(siteId);
                 ValidateQuery(parsedQuery, site);
@@ -364,7 +374,7 @@ select @newId, RevisionId from QuerySetRevisions where QuerySetId = @oldId", new
         }
 
 
-        [Route(@"{sitename}/csv/{revisionId:\d+}/{slug?}", RoutePriority.Low)]
+        [StackRoute(@"{sitename}/csv/{revisionId:\d+}/{slug?}", RoutePriority.Low)]
         public ActionResult ShowSingleSiteCsv(string sitename, int revisionId, string slug)
         {
             Query query = QueryUtil.GetQueryForRevision(revisionId);
@@ -378,8 +388,8 @@ select @newId, RevisionId from QuerySetRevisions where QuerySetId = @oldId", new
 
             if (!TryGetSite(sitename, out site))
             {
-                return site == null ?  (ActionResult)PageNotFound() : RedirectPermanent(string.Format("/{0}/csv/{1}{2}",
-                    site.TinyName.ToLower(), revisionId, slug.HasValue() ? "/" + slug : ""
+                return site == null ?  (ActionResult)PageNotFound() : RedirectPermanent(string.Format("/{0}/csv/{1}{2}{3}",
+                    site.TinyName.ToLower(), revisionId, slug.HasValue() ? "/" + slug : "", Request.Url.Query 
                 ));
             }
 
@@ -413,32 +423,32 @@ select @newId, RevisionId from QuerySetRevisions where QuerySetId = @oldId", new
         }
 
 
-        [Route(@"{sitename}/all-meta-csv/{revisionId:\d+}/{slug?}", RoutePriority.Low)]
+        [StackRoute(@"{sitename}/all-meta-csv/{revisionId:\d+}/{slug?}", RoutePriority.Low)]
         public ActionResult ShowMultiSiteMeteCsv(string sitename, int revisionId)
         {
             return GetCsv(sitename, revisionId, TargetSites.AllMetaSites);
         }
 
 
-        [Route(@"{sitename}/all-csv/{revisionId:\d+}/{slug?}", RoutePriority.Low)]
+        [StackRoute(@"{sitename}/all-csv/{revisionId:\d+}/{slug?}", RoutePriority.Low)]
         public ActionResult ShowMultiSiteCsv(string sitename, int revisionId)
         {
             return GetCsv(sitename, revisionId, TargetSites.AllSites);
         }
 
-        [Route(@"{sitename}/all-non-meta-csv/{revisionId:\d+}/{slug?}", RoutePriority.Low)]
+        [StackRoute(@"{sitename}/all-non-meta-csv/{revisionId:\d+}/{slug?}", RoutePriority.Low)]
         public ActionResult ShowMultiSiteWithoutMetaCsv(string sitename, int revisionId)
         {
             return GetCsv(sitename, revisionId, TargetSites.AllNonMetaSites);
         }
 
-        [Route(@"{sitename}/all-non-meta-but-so-csv/{revisionId:\d+}/{slug?}", RoutePriority.Low)]
+        [StackRoute(@"{sitename}/all-non-meta-but-so-csv/{revisionId:\d+}/{slug?}", RoutePriority.Low)]
         public ActionResult ShowMultiSiteWithoutMetaExcludingSOCsv(string sitename, int revisionId)
         {
             return GetCsv(sitename, revisionId, TargetSites.AllNonMetaSitesButSO);
         }
 
-        [Route(@"{sitename}/all-meta-but-mse-csv/{revisionId:\d+}/{slug?}", RoutePriority.Low)]
+        [StackRoute(@"{sitename}/all-meta-but-mse-csv/{revisionId:\d+}/{slug?}", RoutePriority.Low)]
         public ActionResult ShowMultiSiteMeteExclusingMSOCsv(string sitename, int revisionId)
         {
             return GetCsv(sitename, revisionId, TargetSites.AllMetaSitesButMSE);
@@ -462,7 +472,7 @@ select @newId, RevisionId from QuerySetRevisions where QuerySetId = @oldId", new
             return new CsvResult(results.ResultSets);
         }
 
-        [Route(@"{sitename}/q/{queryId:\d+}/{slug?}")]
+        [StackRoute(@"{sitename}/q/{queryId:\d+}/{slug?}")]
         public ActionResult MapQuery(string sitename, int queryId, string slug)
         {
             Revision revision = QueryUtil.GetMigratedRevision(queryId, MigrationType.Normal);
@@ -483,7 +493,7 @@ select @newId, RevisionId from QuerySetRevisions where QuerySetId = @oldId", new
             return new RedirectPermanentResult("/" + sitename + "/query/" + querySetId + slug);
         }
 
-        [Route(@"{sitename}/query/{operation:fork|edit}/{querySetId:\d+}/{slug?}")]
+        [StackRoute(@"{sitename}/query/{operation:fork|edit}/{querySetId:\d+}/{slug?}")]
         public ActionResult Edit(string sitename, string operation, int querySetId, string slug)
         {
             Site site;
@@ -519,7 +529,7 @@ select @newId, RevisionId from QuerySetRevisions where QuerySetId = @oldId", new
         /// <summary>
         /// Download a query execution plan as xml.
         /// </summary>
-        [Route(@"{sitename}/plan/{revisionId:\d+}/{slug?}", RoutePriority.Low)]
+        [StackRoute(@"{sitename}/plan/{revisionId:\d+}/{slug?}", RoutePriority.Low)]
         public ActionResult ShowPlan(string sitename, int revisionId, string slug)
         {
             Query query = QueryUtil.GetQueryForRevision(revisionId);
@@ -533,8 +543,8 @@ select @newId, RevisionId from QuerySetRevisions where QuerySetId = @oldId", new
 
             if (!TryGetSite(sitename, out site))
             {
-                return site == null ? (ActionResult)PageNotFound() : RedirectPermanent(string.Format("/{0}/plan/{1}{2}",
-                    site.TinyName.ToLower(), revisionId, slug.HasValue() ? "/" + slug : ""
+                return site == null ? (ActionResult)PageNotFound() : RedirectPermanent(string.Format("/{0}/plan/{1}{2}{3}",
+                    site.TinyName.ToLower(), revisionId, slug.HasValue() ? "/" + slug : "", Request.Url.Query
                 ));
             }
 
@@ -558,7 +568,7 @@ select @newId, RevisionId from QuerySetRevisions where QuerySetId = @oldId", new
             return new QueryPlanResult(cache.ExecutionPlan);
         }
 
-        [Route("{sitename}/query/new", RoutePriority.Low)]
+        [StackRoute("{sitename}/query/new", RoutePriority.Low)]
         public ActionResult New(string sitename)
         {
             Site site;
@@ -591,8 +601,6 @@ select @newId, RevisionId from QuerySetRevisions where QuerySetId = @oldId", new
 
         private static QueryResults TranslateResults(ParsedQuery query, bool textResults, QueryResults results)
         {
-            textResults = textResults || (results.ResultSets.Count != 1);
-        
             if (textResults)
             {
                 results = results.ToTextResults();

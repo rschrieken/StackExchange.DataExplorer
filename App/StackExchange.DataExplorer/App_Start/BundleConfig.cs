@@ -1,23 +1,15 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Web;
-using System.Web.Optimization;
+﻿using System.Web.Optimization;
 
-[assembly: WebActivator.PreApplicationStartMethod(
-    typeof(StackExchange.DataExplorer.App_Start.BundleConfig), "PreStart")]
-
-namespace StackExchange.DataExplorer.App_Start
+namespace StackExchange.DataExplorer
 {
     public class BundleConfig
     {
-        public static void PreStart()
+        public static void Start()
         {
             // register public resource bundles (css/js)
 #if !DEBUG
             BundleTable.EnableOptimizations = true;
 #endif
-
             RegisterBundles(BundleTable.Bundles);
         }
 
@@ -33,6 +25,7 @@ namespace StackExchange.DataExplorer.App_Start
             );
 
             bundles.Add(new ScriptBundle("~/assets/js/master")
+                .Include("~/Scripts/es5-shim.js")
                 .Include("~/Scripts/master.js")
                 .Include("~/Scripts/jquery.autocomplete.js")
             );
@@ -46,9 +39,15 @@ namespace StackExchange.DataExplorer.App_Start
                 .Include("~/Scripts/codemirror/codemirror.js")
                 .Include("~/Scripts/codemirror/sql.js")
                 .Include("~/Scripts/codemirror/runmode.js")
-                .Include("~/Scripts/query.js")
+                .Include("~/Scripts/flot/jquery.flot.js")
+                .Include("~/Scripts/flot/jquery.flot.time.js")
+                .Include("~/Scripts/flot/jquery.colorhelpers.js")
+                .Include("~/Scripts/query.parameterparser.js")
+                .Include("~/Scripts/query.resultset.js")
+                .Include("~/Scripts/query.graph.js")
                 .Include("~/Scripts/qp.js")
                 .Include("~/Scripts/query.siteswitcher.js")
+                .Include("~/Scripts/query.js")
             );
 
             bundles.Add(new ScriptBundle("~/assets/js/editor")
@@ -56,13 +55,9 @@ namespace StackExchange.DataExplorer.App_Start
                 .Include("~/Scripts/query.tablehelpers.js")
             );
 
-            bundles.Add(new ScriptBundle("~/assets/js/flot")
-                .Include("~/Scripts/flot/jquery.flot.js")
-            );
-
             bundles.Add(new StyleBundle("~/assets/css/master")
                 .Include("~/Content/font-awesome/css/font-awesome.min.css", new CssRewriteUrlTransform())
-                .Include("~/Content/site.css")
+                .Include("~/Content/site.css", new CssRewriteUrlTransform())
                 .Include("~/Content/homepage.css")
                 .Include("~/Content/topbar.css", new CssRewriteUrlTransform())
                 .Include("~/Content/header.css", new CssRewriteUrlTransform())
@@ -70,11 +65,11 @@ namespace StackExchange.DataExplorer.App_Start
             );
 
             bundles.Add(new StyleBundle("~/assets/css/query")
-                .Include("~/Content/smoothness/jquery-ui-1.8.1.custom.css")
                 .Include("~/Content/codemirror/codemirror.css")
                 .Include("~/Content/codemirror/custom.css")
                 .Include("~/Content/codemirror/theme.css")
-                .Include("~/Content/slickgrid/slick.grid.css")
+                .Include("~/Content/slickgrid/slick.grid.css", new CssRewriteUrlTransform())
+                .Include("~/Content/query.css", new CssRewriteUrlTransform())
                 .Include("~/Content/qp/qp.css")
             );
         }

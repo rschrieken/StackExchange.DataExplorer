@@ -5,12 +5,9 @@ using System.Web;
 using System.Web.Mvc;
 using System.Web.Routing;
 using System.Web.Security;
-using SimpleErrorHandler;
 using StackExchange.DataExplorer.Helpers;
-using System.Linq;
-using System.Web.Optimization;
-using StackExchange.Profiling.MVCHelpers;
-using StackExchange.DataExplorer.App_Start;
+using StackExchange.Exceptional;
+using StackExchange.Profiling;
 
 namespace StackExchange.DataExplorer
 {
@@ -19,8 +16,6 @@ namespace StackExchange.DataExplorer
 
     public class GlobalApplication : HttpApplication
     {
-        private static ErrorLogModule ErrorModule;
-
         public static string AppRevision
         {
             get
@@ -43,15 +38,8 @@ namespace StackExchange.DataExplorer
             // set up MVC routes so our app URLs actually work
             // IMPORTANT: this must be called last; nothing else appears to execute after this
             RegisterRoutes(RouteTable.Routes);
-        }
-
-        // http://msdn.microsoft.com/en-us/library/system.web.httpapplication.init(VS.71).aspx
-        public override void Init()
-        {
-            base.Init();
-
-            // Get our error handler, so we can write exceptions
-            ErrorModule = Modules["ErrorLog"] as ErrorLogModule; // this requires full trust
+            BundleConfig.Start();
+            MiniProfilerPackage.Start();
         }
 
         /// <summary>
@@ -66,7 +54,7 @@ namespace StackExchange.DataExplorer
             routes.IgnoreRoute("favicon.ico");
             routes.IgnoreRoute("assets/{*pathInfo}");
 
-            RouteAttribute.MapDecoratedRoutes(routes);
+            StackRouteAttribute.MapDecoratedRoutes(routes);
 
             // MUST be the last route as a catch-all!
             routes.MapRoute("{*url}", new {controller = "Error", action = "PageNotFound"});
@@ -112,11 +100,16 @@ namespace StackExchange.DataExplorer
         
         }
 
+        protected void Application_BeginRequest()
+        {
+            MiniProfiler.Start();
+        }
 
-        protected void Application_EndRequest(object sender, EventArgs e)
+        protected void Application_EndRequest()
         {
             Current.DisposeDB();
             Current.DisposeRegisteredConnections();
+            MiniProfiler.Stop();
         }
 
 
@@ -131,19 +124,14 @@ namespace StackExchange.DataExplorer
         /// <summary>
         /// manually write an exception to our standard exception log
         /// </summary>
-        public static void LogException(Exception ex)
+        public static void LogException(Exception ex, bool rollupPerServer = false)
         {
             try
             {
-                if (ErrorModule != null)
-                    ErrorModule.LogException(ex, HttpContext.Current);
+                ErrorStore.LogException(ex, Current.Context, appendFullStackTrace: true, rollupPerServer: rollupPerServer);
             }
-            catch
-            {
-                /* Do nothing */
-            }
+            catch { /* Do nothing */ }
         }
-
 
         protected void Application_AuthenticateRequest(Object sender, EventArgs e)
         {
