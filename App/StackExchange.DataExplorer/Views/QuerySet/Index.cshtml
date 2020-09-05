@@ -1,4 +1,4 @@
-﻿@model PagedList<StackExchange.DataExplorer.ViewModel.QueryExecutionViewData>
+﻿@model PagedList<QueryExecutionViewData>
 @using StackExchange.DataExplorer
 @using StackExchange.DataExplorer.Helpers
 @using StackExchange.DataExplorer.Models
@@ -6,13 +6,13 @@
 @{
     this.SetPageTitle("Browse Queries - Stack Exchange Data Explorer");
     var site = ViewData["Site"] as Site;
-    int totalQueries = (int)Model.TotalCount;
+    int totalQueries = Model.TotalCount;
     var qsc = ViewData["SearchCriteria"] as QuerySearchCriteria;
 }
 @section SecondaryContent {
     <div id="sidebar">
         <div class="module">
-            <div class="summarycount al">@string.Format("{0:n0}", totalQueries)</div>
+            <div class="summarycount al @(totalQueries >= 1000000 ? "bignum" : "")">@string.Format("{0:n0}", totalQueries)</div>
             <p>@(totalQueries == 1 ? "query" : "queries")</p>
         </div>
         @if (qsc.IsValid)
@@ -30,7 +30,9 @@
         }
         
         <div id="aboutSite" class="module">
-            <img src="@site.ImageUrl" alt="@site.LongName" class="site" />
+            <a href="@site.Url">
+                <img src="@site.ImageUrl" alt="@site.LongName" class="site" />
+            </a>
             <p class="tagline">@site.Tagline</p>
         </div>
 
@@ -135,7 +137,7 @@
     @UIHelper.PageNumber(ViewData["Href"].ToString() + "&page=-1&pagesize=" + Model.PageSize, Model, "pager")
 </div>
 
-<script type="text/javascript">
+<script>
     $(document).ready(function () {
 
         var hideSkipped = function () {

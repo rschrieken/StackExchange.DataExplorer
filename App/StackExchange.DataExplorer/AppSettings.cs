@@ -87,7 +87,23 @@ namespace StackExchange.DataExplorer
         [Default("")]
         public static string GoogleOAuthSecret { get; private set; }
 
-        public static bool EnableGoogleLogin { get { return GoogleOAuthClientId.HasValue() && GoogleOAuthSecret.HasValue(); } }
+        public static bool EnableGoogleLogin => GoogleOAuthClientId.HasValue() && GoogleOAuthSecret.HasValue();
+
+        [Default("")]
+        public static string StackAppsClientId { get; private set; }
+        [Default("")]
+        public static string StackAppsOAuthSecret { get; private set; }
+        [Default("stackoverflow.com")]
+        public static string StackAppsDomain { get; private set; }
+        private static string _stackAppsAuthUrl;
+        public static string StackAppsAuthUrl => _stackAppsAuthUrl ?? (_stackAppsAuthUrl = "https://" + StackAppsDomain + "/oauth");
+        [Default("")]
+        public static string StackAppsApiKey { get; private set; }
+        public static bool EnableStackAppsAuth => StackAppsClientId.HasValue() && StackAppsOAuthSecret.HasValue() && StackAppsDomain.HasValue() && StackAppsApiKey.HasValue();
+        [Default("api.stackexchange.com")]
+        public static string StackExchangeApiDomain { get; private set; }
+        [Default("")]
+        public static string StackExchangeSyntheticIdPrefix { get; private set; }
 
 
         public enum AuthenitcationMethod
@@ -117,7 +133,7 @@ namespace StackExchange.DataExplorer
                     if (property.PropertyType == typeof(bool))
                     {
                         bool parsed;
-                        Boolean.TryParse(overrideData, out parsed);
+                        bool.TryParse(overrideData, out parsed);
                         property.SetValue(null, parsed, null);
                     }
                     else if (property.PropertyType == typeof(int))
@@ -160,8 +176,7 @@ namespace StackExchange.DataExplorer
                 }
             }
             // For anyone who wants to listen and update their downstream data...
-            var handler = Refreshed;
-            if (handler != null) handler();
+            Refreshed?.Invoke();
         }
     }
 }

@@ -4,7 +4,6 @@ using System.IO;
 using System.Text;
 using System.Web;
 using System.Xml;
-using System.Xml.Schema;
 using System.Xml.Xsl;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
@@ -32,34 +31,13 @@ namespace StackExchange.DataExplorer.Helpers
     {
         public static readonly Dictionary<Type, ResultColumnType> ColumnTypeMap = new Dictionary<Type, ResultColumnType>
         {
-            {
-                typeof (int),
-                ResultColumnType.Number
-            },
-            {
-                typeof (long),
-                ResultColumnType.Number
-            },
-            {
-                typeof (float),
-                ResultColumnType.Number
-            },
-            {
-                typeof (double),
-                ResultColumnType.Number
-            },
-            {
-                typeof (decimal),
-                ResultColumnType.Number
-            },
-            {
-                typeof (string),
-                ResultColumnType.Text
-            },
-            {
-                typeof (DateTime),
-                ResultColumnType.Date
-            }
+            {typeof(int), ResultColumnType.Number},
+            {typeof(long), ResultColumnType.Number},
+            {typeof(float), ResultColumnType.Number},
+            {typeof(double), ResultColumnType.Number},
+            {typeof(decimal), ResultColumnType.Number},
+            {typeof(string), ResultColumnType.Text},
+            {typeof(DateTime), ResultColumnType.Date}
         };
 
         public ResultColumnInfo()
@@ -78,18 +56,12 @@ namespace StackExchange.DataExplorer.Helpers
         public int Id { get; set; }
         public string Title { get; set; }
 
-        public override string ToString()
-        {
-            return Id.ToString();
-        }
+        public override string ToString() => Id.ToString();
     }
 
     public class MagicResultConverter : JsonConverter
     {
-        public override bool CanConvert(Type objectType)
-        {
-            return typeof(object) == objectType;
-        }
+        public override bool CanConvert(Type objectType) => typeof(object) == objectType;
 
         public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
         {
@@ -126,14 +98,18 @@ namespace StackExchange.DataExplorer.Helpers
     public class QueryResults
     {
         private const int MAX_TEXT_COLUMN_WIDTH = 512;
+        // based on this date format yyyy-MM-dd HH:mm:ss 
+        // you'll need 19 characters to align textresult columns
+        private const int DATE_COLUMN_WIDTH = 19; 
 
-        private static readonly List<ResultColumnType> nativeTypes = new List<ResultColumnType>
-                                                                         {
-                                                                             ResultColumnType.Date,
-                                                                             ResultColumnType.Default,
-                                                                             ResultColumnType.Number,
-                                                                             ResultColumnType.Text
-                                                                         };
+        private static readonly List<ResultColumnType> _nativeTypes =
+            new List<ResultColumnType>
+            {
+                ResultColumnType.Date,
+                ResultColumnType.Default,
+                ResultColumnType.Number,
+                ResultColumnType.Text
+            };
 
         public QueryResults()
         {
@@ -183,75 +159,65 @@ namespace StackExchange.DataExplorer.Helpers
             };
         }
 
-        public static QueryResults FromJson(string json)
-        {
-            return JsonConvert.DeserializeObject<QueryResults>(json, GetSettings());
-        }
+        public static QueryResults FromJson(string json) => 
+            JsonConvert.DeserializeObject<QueryResults>(json, GetSettings());
 
         public QueryResults WithCache(CachedResult cache)
         {
-            if (cache == null || cache.Results == null)
+            if (cache?.Results == null)
             {
                 return this;
             }
 
-            this.Messages = cache.Messages;
-            this.ResultSets = JsonConvert.DeserializeObject<List<ResultSet>>(cache.Results);
-            this.ExecutionPlan = cache.ExecutionPlan;
+            Messages = cache.Messages;
+            ResultSets = JsonConvert.DeserializeObject<List<ResultSet>>(cache.Results);
+            ExecutionPlan = cache.ExecutionPlan;
 
             return this;
         }
 
-        public QueryResults ToTextResults()
+        public QueryResults ToTextResults() => new QueryResults
         {
-            var results = new QueryResults();
-            results.ExecutionTime = ExecutionTime;
-            results.FirstRun = FirstRun;
-            results.MaxResults = MaxResults;
-            results.QueryId = QueryId;
-            results.SiteId = SiteId;
-            results.SiteName = SiteName;
-            results.TextOnly = true;
-            results.Truncated = Truncated;
-            results.Url = Url;
-            results.Slug = Slug;
-            results.TargetSites = TargetSites;
-            results.ExecutionPlan = this.ExecutionPlan;
-            results.ParentId = ParentId;
-            results.RevisionId = RevisionId;
-            results.Created = Created;
-            results.QuerySetId = QuerySetId;
+            ExecutionTime = ExecutionTime,
+            FirstRun = FirstRun,
+            MaxResults = MaxResults,
+            QueryId = QueryId,
+            SiteId = SiteId,
+            SiteName = SiteName,
+            TextOnly = true,
+            Truncated = Truncated,
+            Url = Url,
+            Slug = Slug,
+            TargetSites = TargetSites,
+            ExecutionPlan = ExecutionPlan,
+            ParentId = ParentId,
+            RevisionId = RevisionId,
+            Created = Created,
+            QuerySetId = QuerySetId,
+            Messages = FormatTextResults(Messages, ResultSets)
+        };
 
-            results.Messages = FormatTextResults(Messages, ResultSets);
-
-            return results;
-        }
-
-        public QueryResults TransformQueryPlan()
+        public QueryResults TransformQueryPlan() => new QueryResults
         {
-            var returnValue = new QueryResults();
-            returnValue.ExecutionTime = this.ExecutionTime;
-            returnValue.FirstRun = this.FirstRun;
-            returnValue.MaxResults = this.MaxResults;
-            returnValue.QueryId = this.QueryId;
-            returnValue.SiteId = this.SiteId;
-            returnValue.SiteName = this.SiteName;
-            returnValue.TextOnly = this.TextOnly;
-            returnValue.Truncated = this.Truncated;
-            returnValue.Url = this.Url;
-            returnValue.Slug = this.Slug;
-            returnValue.TargetSites = this.TargetSites;
-            returnValue.ResultSets = this.ResultSets;
-            returnValue.Messages = this.Messages;
-            returnValue.ParentId = ParentId;
-            returnValue.RevisionId = RevisionId;
-            returnValue.Created = Created;
-            returnValue.QuerySetId = QuerySetId;
-
-            returnValue.ExecutionPlan = TransformPlan(this.ExecutionPlan);
-
-            return returnValue;
-        }
+            ExecutionTime = ExecutionTime,
+            FirstRun = FirstRun,
+            MaxResults = MaxResults,
+            QueryId = QueryId,
+            SiteId = SiteId,
+            SiteName = SiteName,
+            TextOnly = TextOnly,
+            Truncated = Truncated,
+            Url = Url,
+            Slug = Slug,
+            TargetSites = TargetSites,
+            ResultSets = ResultSets,
+            Messages = Messages,
+            ParentId = ParentId,
+            RevisionId = RevisionId,
+            Created = Created,
+            QuerySetId = QuerySetId,
+            ExecutionPlan = TransformPlan(ExecutionPlan)
+        };
 
         public static string FormatTextResults(string messages, List<ResultSet> resultSets)
         {
@@ -259,7 +225,7 @@ namespace StackExchange.DataExplorer.Helpers
             int messagePosition = 0;
             int length;
 
-            foreach (ResultSet resultSet in resultSets)
+            foreach (var resultSet in resultSets)
             {
                 length = resultSet.MessagePosition - messagePosition;
                 if (length > 0)
@@ -293,25 +259,18 @@ namespace StackExchange.DataExplorer.Helpers
                 return null;
             }
 
-            var schema = new XmlSchemaSet();
-            schema.Add("http://schemas.microsoft.com/sqlserver/2004/07/showplan", HttpContext.Current.Server.MapPath(@"~/Content/qp/showplanxml.xsd"));
-
-            var settings = new XmlReaderSettings()
-            {
-                ValidationType = ValidationType.Schema,
-                Schemas = schema,
-            };
-
-            using (var reader = System.Xml.XmlReader.Create(new StringReader(plan), settings))
+            using (var reader = XmlReader.Create(new StringReader(plan)))
             {
                 XslCompiledTransform t = new XslCompiledTransform(true);
                 t.Load(HttpContext.Current.Server.MapPath(@"~/Content/qp/qp.xslt"));
 
                 StringBuilder returnValue = new StringBuilder();
-                using (var writer = System.Xml.XmlWriter.Create(returnValue, t.OutputSettings))
+
+                using (var writer = XmlWriter.Create(returnValue, t.OutputSettings))
                 {
                     t.Transform(reader, writer);
                 }
+
                 return returnValue.ToString();
             }
         }
@@ -343,11 +302,12 @@ namespace StackExchange.DataExplorer.Helpers
                     object col = row[i];
 
                     string currentVal;
-                    if (nativeTypes.Contains(resultSet.Columns[i].Type))
+                    if (_nativeTypes.Contains(resultSet.Columns[i].Type))
                     {
                         if (col != null && resultSet.Columns[i].Type == ResultColumnType.Date)
                         {
-                            currentVal = Util.FromJavaScriptTime((long)col).ToString("yyyy-MM-dd HH:mm:ss");
+                            // if you change the format, also adapt DATE_COLUMN_WIDTH 
+                            currentVal = Util.FromJavaScriptTime((long)col).ToString("yyyy-MM-dd HH:mm:ss"); 
                         }
                         else
                         {
@@ -357,21 +317,14 @@ namespace StackExchange.DataExplorer.Helpers
                     else
                     {
                         var data = col as JContainer;
-                        if (data != null && data["title"] != null)
+                        if (data?["title"] != null)
                         {
                             currentVal = (data.Value<string>("title") ?? "null");
                         }
                         else
                         {
                             var sInfo = col as SiteInfo;
-                            if (sInfo != null)
-                            { 
-                                currentVal = sInfo.Name;
-                            }
-                            else 
-                            {
-                                currentVal = "null";
-                            }
+                            currentVal = sInfo != null ? sInfo.Name : "null";
                         }
                     }
                     buffer.Append(currentVal.PadRight(maxLengths[i] + 1, ' '));
@@ -386,7 +339,7 @@ namespace StackExchange.DataExplorer.Helpers
         {
             var maxLengths = new List<int>();
 
-            foreach (ResultColumnInfo colInfo in resultSet.Columns)
+            foreach (var colInfo in resultSet.Columns)
             {
                 maxLengths.Add(colInfo.Name.Length);
             }
@@ -395,12 +348,25 @@ namespace StackExchange.DataExplorer.Helpers
             {
                 for (int i = 0; i < resultSet.Columns.Count; i++)
                 {
-                    object col = row[i];
+                    var col = row[i];
 
                     int curLength;
-                    if (nativeTypes.Contains(resultSet.Columns[i].Type))
+                    if (_nativeTypes.Contains(resultSet.Columns[i].Type))
                     {
-                        curLength = col == null ? 4 : col.ToString().Length;
+                        // Date is formatted later for textresults!
+                        if (col != null && resultSet.Columns[i].Type == ResultColumnType.Date)
+                        {
+                            // col contains a long 
+                            // for textresults it is formatted later
+                            // instead of taking its length
+                            // use the length that will come out after
+                            // the String.Format is applied
+                            curLength = DATE_COLUMN_WIDTH; 
+                        }
+                        else
+                        {
+                            curLength = col?.ToString().Length ?? 4;
+                        }
                     }
                     else
                     {
@@ -420,23 +386,18 @@ namespace StackExchange.DataExplorer.Helpers
             return maxLengths;
         }
 
-        public string ToJson()
-        {
-            return
-                JsonConvert.SerializeObject(
-                    this,
-                    Newtonsoft.Json.Formatting.Indented,
-                    GetSettings()
-                );
-        }
+        public string ToJson() =>
+            JsonConvert.SerializeObject(
+                this,
+                Newtonsoft.Json.Formatting.Indented,
+                GetSettings()
+            );
 
-        public string GetJsonResults()
-        {
-            return JsonConvert.SerializeObject(
-                this.ResultSets,
+        public string GetJsonResults() =>
+            JsonConvert.SerializeObject(
+                ResultSets,
                 Newtonsoft.Json.Formatting.None,
                 GetSettings()
             );
-        }
     }
 }

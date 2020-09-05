@@ -42,15 +42,9 @@ namespace StackExchange.DataExplorer.Helpers.Security
             return authed;
         }
 
-        public static bool IsAdmin(string userName)
-        {
-            return IsMember(userName, _admins, _adminGroups);
-        }
+        public static bool IsAdmin(string userName) => IsMember(userName, _admins, _adminGroups);
 
-        public static bool IsUser(string userName)
-        {
-            return IsMember(userName, _users, _userGroups);
-        }
+        public static bool IsUser(string userName) => IsMember(userName, _users, _userGroups);
 
         public static void SetProperties(User user)
         {
@@ -112,7 +106,7 @@ namespace StackExchange.DataExplorer.Helpers.Security
                 if (retries > 0)
                 {
                     Thread.Sleep(500);
-                    RunCommand(command, retries - 1);
+                    return RunCommand(command, retries - 1);
                 }
                 else
                 {

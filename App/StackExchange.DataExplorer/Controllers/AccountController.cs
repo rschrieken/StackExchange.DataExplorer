@@ -22,6 +22,7 @@ namespace StackExchange.DataExplorer.Controllers
     {
         private static readonly OpenIdRelyingParty OpenIdRelay = new OpenIdRelyingParty();
         const int GoogleAuthRetryAttempts = 3;
+        const int StackAppsAuthRetryAttempts = 3;
 
         [StackRoute("account/logout")]
         public ActionResult Logout()
@@ -63,11 +64,7 @@ namespace StackExchange.DataExplorer.Controllers
                 {
                     return ErrorLogin("User is now in allowed Active Directory groups.", returnUrl);
                 }
-                var user = Models.User.GetByADLogin(username);
-                if (user == null)
-                {
-                    user = Models.User.CreateUser(username);
-                }
+                var user = Models.User.GetByADLogin(username) ?? Models.User.CreateUser(username);
                 if (user == null)
                 {
                     return ErrorLogin("Error creating user for " + username + ".", returnUrl);
@@ -112,7 +109,7 @@ namespace StackExchange.DataExplorer.Controllers
                 {
                     try
                     {
-                        IAuthenticationRequest request = OpenIdRelay.CreateRequest(id);
+                        var request = OpenIdRelay.CreateRequest(id);
 
                         request.AddExtension(
                             new ClaimsRequest
@@ -211,7 +208,7 @@ namespace StackExchange.DataExplorer.Controllers
                             {
                                 return LoginError("User preferences prohibit insecure (non-https) variants of the provided OpenID identifier");
                             }
-                            else if (isSecure && !openId.IsSecure)
+                            if (isSecure && !openId.IsSecure)
                             {
                                 Current.DB.UserOpenIds.Update(openId.Id, new { IsSecure = true });
                             }
@@ -223,10 +220,7 @@ namespace StackExchange.DataExplorer.Controllers
                         {
                             return Redirect(returnUrl);
                         }
-                        else
-                        {
-                            return RedirectToAction("Index", "Home");
-                        }
+                        return RedirectToAction("Index", "Home");
                     case AuthenticationStatus.Canceled:
                         return LoginError("Canceled at provider");
                     case AuthenticationStatus.Failed:
@@ -234,6 +228,44 @@ namespace StackExchange.DataExplorer.Controllers
                 }
             }
             return new EmptyResult();
+        }
+
+        private ActionResult LoginViaAccountId(string displayName, int accountId, string returnUrl)
+        {
+            var syntheticId = Models.User.NormalizeOpenId($"{AppSettings.StackExchangeSyntheticIdPrefix}{accountId}");
+
+            var openId = Current.DB.Query<UserOpenId>(
+                @"
+                    select UserId
+                    from UserOpenIds
+                    where OpenIdClaim = @syntheticId",
+                new { syntheticId }).FirstOrDefault();
+
+            try
+            {
+                User user = null;
+                if (openId != null)
+                {
+                    user = Current.DB.Query<User>(
+                        @"
+                            select *
+                            from Users
+                            where Id = @UserId"
+                        , new { openId.UserId }).FirstOrDefault();
+                }
+                if (user == null)
+                {
+                    user = Models.User.CreateUser(displayName, null, syntheticId);
+                }
+
+                IssueFormsTicket(user);
+                return Redirect(returnUrl);
+            }
+            catch (Exception ex)
+            {
+                Current.LogException(ex);
+                return ErrorLogin("Error: " + ex.Message, returnUrl);
+            }
         }
 
         private ActionResult LoginViaEmail(string email, string displayName, string returnUrl)
@@ -307,15 +339,9 @@ namespace StackExchange.DataExplorer.Controllers
             return null;
         }
 
-        private ActionResult LoginError(string message)
-        {
-            return RedirectToAction("Login", new {message});
-        }
+        private ActionResult LoginError(string message) => RedirectToAction("Login", new {message});
 
-        private string BaseUrl
-        {
-            get { return Current.Request.Url.Scheme + "://" + Current.Request.Url.Host; }
-        }
+        private string BaseUrl => Current.Request.Url.Scheme + "://" + Current.Request.Url.Host;
 
         private ActionResult OAuthLogin()
         {
@@ -326,8 +352,6 @@ namespace StackExchange.DataExplorer.Controllers
             var hash = (AppSettings.OAuthSessionSalt + ":" + session).ToMD5Hash();
             var stateJson = JsonConvert.SerializeObject(new OAuthLoginState { ses = session, hash = hash });
 
-            switch (server)
-            {
                 //case "https://graph.facebook.com/oauth/authorize": // Facebook
                 //    GetFacebookConfig(out secret, out clientId);
                 //    var redirect = string.Format(
@@ -338,8 +362,7 @@ namespace StackExchange.DataExplorer.Controllers
                 //        session,
                 //        state);
                 //    return Redirect(redirect);
-                case "https://accounts.google.com/o/oauth2/auth": // Google
-                    GetGoogleConfig(out secret, out clientId, out path);
+            if (server == "https://accounts.google.com/o/oauth2/auth" && TryGetGoogleConfig(out secret, out clientId, out path)) // Google
                     return Redirect(string.Format(
                             "{0}?client_id={1}&scope=openid+email&redirect_uri={2}&state={3}&response_type=code",
                             server,
@@ -347,16 +370,24 @@ namespace StackExchange.DataExplorer.Controllers
                             (BaseUrl + path).UrlEncode(),
                             stateJson.UrlEncode()
                             ));
-            }
+            else if(server == AppSettings.StackAppsAuthUrl && TryGetStackAppsConfig(out secret, out clientId, out path))
+                    return Redirect(string.Format(
+                            "{0}?client_id={1}&scope=&redirect_uri={2}&state={3}",
+                            server,
+                            clientId,
+                            (BaseUrl + path).UrlEncode(),
+                            stateJson.UrlEncode()
+                            ));
 
             return LoginError("Unsupported OAuth version or server");
         }
 
-        private void GetGoogleConfig(out string secret , out string clientId, out string path)
+        private static bool TryGetGoogleConfig(out string secret , out string clientId, out string path)
         {
             secret = AppSettings.GoogleOAuthSecret;
             clientId = AppSettings.GoogleOAuthClientId;
             path = "/user/oauth/google";
+            return AppSettings.EnableGoogleLogin;
         }
 
         [StackRoute("user/oauth/google")]
@@ -367,7 +398,10 @@ namespace StackExchange.DataExplorer.Controllers
                 return LoginError("(From Google) Access Denied");
             }
             string secret, clientId, path;
-            GetGoogleConfig(out secret, out clientId, out path);
+            if (!TryGetGoogleConfig(out secret, out clientId, out path))
+            {
+                return LoginError("Google Auth not enabled");
+            }
 
             // Verify state
             var oAuthState = JsonConvert.DeserializeObject<OAuthLoginState>(state);
@@ -483,8 +517,137 @@ namespace StackExchange.DataExplorer.Controllers
             }
             catch (Exception e)
             {
-                GlobalApplication.LogException(new Exception("Error in parsing google response: " + result, e));
+                Current.LogException("Error in parsing google response: " + result, e);
                 return LoginError("There was an error fetching your account from Google.  Please try logging in again");
+            }
+        }
+
+        private bool TryGetStackAppsConfig(out string secret , out string clientId, out string path)
+        {
+            secret = AppSettings.StackAppsOAuthSecret;
+            clientId = AppSettings.StackAppsClientId;
+            path = "/user/oauth/stackapps";
+            return AppSettings.EnableStackAppsAuth;
+        }
+
+        [StackRoute("user/oauth/stackapps")]
+        public ActionResult StackAppsCallback(string code, string state, string error)
+        {
+            if (code.IsNullOrEmpty() || error == "access_denied")
+            {
+                return LoginError("(From StackApps) Access Denied");
+            }
+            string secret, clientId, path;
+            if (!TryGetStackAppsConfig(out secret, out clientId, out path))
+            {
+                return LoginError("StackApps Auth not enabled");
+            }
+
+            // Verify state
+            var oAuthState = JsonConvert.DeserializeObject<OAuthLoginState>(state);
+            var hash = (AppSettings.OAuthSessionSalt + ":" + oAuthState.ses).ToMD5Hash();
+            if (oAuthState.hash != hash)
+            {
+                return LoginError("Invalid verification hash");
+            }
+
+            var postForm = HttpUtility.ParseQueryString("");
+            postForm["code"] = code;
+            postForm["client_id"] = clientId;
+            postForm["client_secret"] = secret;
+            postForm["redirect_uri"] = BaseUrl + path;
+
+            for (var retry = 0; retry < StackAppsAuthRetryAttempts; retry++)
+            {
+                StackAppsAuthResponse authResponse;
+                try
+                {
+                    using (var wc = new WebClient())
+                    {
+                        var response = wc.UploadValues(AppSettings.StackAppsAuthUrl + "/access_token/json", postForm);
+                        var responseStr = Encoding.UTF8.GetString(response);
+                        authResponse = JsonConvert.DeserializeObject<StackAppsAuthResponse>(responseStr);
+                    }
+                    if (authResponse != null && authResponse.access_token.HasValue())
+                    {
+                        var loginResponse = FetchFromStackApps(authResponse.access_token, "/"); // TODO not the actual returnUrl, but LoginViaEmail does the same...
+                        if (loginResponse != null) return loginResponse;
+                    }
+                }
+                catch (WebException e)
+                {
+                    using (var reader = new StreamReader(e.Response.GetResponseStream()))
+                    {
+                        var text = reader.ReadToEnd();
+                        LogAuthError(new Exception("Error contacting " + AppSettings.StackAppsDomain + ": " + text));
+                    }
+                    continue;
+                }
+                catch(Exception e)
+                {
+                    LogAuthError(e);
+                    continue;
+                }
+            }
+
+            return LoginError("StackApps authentication failed");
+        }
+
+        private ActionResult FetchFromStackApps(string accessToken, string returnUrl)
+        {
+            string result = null;
+            Exception lastException = null;
+            for (var retry = 0; retry < StackAppsAuthRetryAttempts; retry++)
+            {
+                try
+                {
+                    var url = $"https://{AppSettings.StackExchangeApiDomain}/2.2/me?site={HttpUtility.UrlEncode(AppSettings.StackAppsDomain)}&access_token={HttpUtility.UrlEncode(accessToken)}&key={HttpUtility.UrlEncode(AppSettings.StackAppsApiKey)}";
+                    var request = WebRequest.CreateHttp(url);
+                    request.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate;
+                    using (var response = request.GetResponse())
+                    using (var reader = new StreamReader(response.GetResponseStream()))
+                    {
+                        result = reader.ReadToEnd();
+                        break;
+                    }
+                }
+                catch (WebException e)
+                {
+                    using (var reader = new StreamReader(e.Response.GetResponseStream()))
+                    {
+                        var text = reader.ReadToEnd();
+                        LogAuthError(new Exception($"Error fetching from {AppSettings.StackExchangeApiDomain}: {text}"));
+                    }
+                    continue;
+                }
+                catch (Exception e)
+                {
+                    lastException = e;
+                }
+                if (retry == StackAppsAuthRetryAttempts - 1)
+                    LogAuthError(lastException);
+            }
+
+            if (result.IsNullOrEmpty() || result == "false")
+            {
+                return LoginError($"Error accessing {AppSettings.StackAppsDomain} user");
+            }
+
+            try
+            {
+                var user = JsonConvert.DeserializeObject<SEApiUserResponse>(result)?.items?.FirstOrDefault();
+
+                if (user == null)
+                    return LoginError($"Error fetching user from {AppSettings.StackAppsDomain}");
+                if (user.account_id == null)
+                    return LoginError($"Error fetching account_id from {AppSettings.StackAppsDomain}");
+
+                return LoginViaAccountId(user.display_name, user.account_id.Value, returnUrl);
+            }
+            catch (Exception e)
+            {
+                Current.LogException($"Error in parsing {AppSettings.StackExchangeApiDomain} response: " + result, e);
+                return LoginError($"There was an error fetching your account from {AppSettings.StackAppsDomain}. Please try logging in again");
             }
         }
 
@@ -496,7 +659,7 @@ namespace StackExchange.DataExplorer.Controllers
                 //return;
             }
 
-            GlobalApplication.LogException(e);
+            Current.LogException(e);
         }
 
         private void IssueFormsTicket(User user)
@@ -573,7 +736,26 @@ namespace StackExchange.DataExplorer.Controllers
             public string gender { get; set; }
             public string locale { get; set; }
         }
+        public class StackAppsAuthResponse
+        {
+            public string access_token { get; set; }
 
+            public long expires { get; set; }
+        }
+
+        public class SEApiUserResponse
+        {
+            public SEApiUser[] items { get; set; }
+        }
+
+        public class SEApiUser
+        {
+            public int? account_id { get; set; }
+            public int? user_id { get; set; }
+            public string link { get; set; }
+            public string profile_image { get; set; }
+            public string display_name { get; set; }
+        }
         // ReSharper restore InconsistentNaming
     }
 }
